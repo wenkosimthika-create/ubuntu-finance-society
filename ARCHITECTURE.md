@@ -2,11 +2,23 @@
 
 ## Core Principle
 
-**The group keeps the money. Ubuntu Finance Society keeps the record.**
+> **The group keeps the money. Ubuntu Finance Society keeps the record.**
 
-This principle guides every architectural decision. The system is a governance, transparency, and audit platform—never a money movement system.
+This principle guides every architectural decision. The system is purely a governance, transparency, and audit platform—it never processes, holds, or transfers money.
 
-## System Overview
+---
+
+## 1. System Overview
+
+Ubuntu Finance Society is a digital audit platform designed for community financial groups. It provides:
+
+- **Permanent Record-Keeping**: Immutable audit trail for all transactions
+- **Governance Management**: Constitution, meetings, voting records
+- **Member Management**: Roles, status tracking, permissions
+- **Financial Transparency**: Complete ledger visibility
+- **Compliance Tracking**: Regulatory alignment and reporting
+
+### System Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -39,218 +51,477 @@ This principle guides every architectural decision. The system is a governance, 
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Technology Stack
+---
+
+## 2. Technology Stack
 
 ### Backend
 - **Runtime**: Node.js 18+
-- **Framework**: Express.js
+- **Framework**: Express.js 4.x
+- **Language**: TypeScript 5.x
 - **Database**: PostgreSQL 14+
-- **ORM**: Prisma
-- **Authentication**: JWT with bcrypt
-- **Validation**: Joi/Yup
-- **Logging**: Winston
-- **Testing**: Jest, Supertest
+- **ORM**: Prisma 5.x
+- **Authentication**: JWT + bcrypt
+- **Logging**: Winston 3.x
+- **Testing**: Jest 29.x
+- **Validation**: Joi 17.x
 
 ### Frontend
-- **Framework**: Next.js 14+ (React 18+)
-- **UI Library**: Tailwind CSS
-- **State Management**: Zustand
-- **HTTP Client**: Axios
-- **Forms**: React Hook Form
-- **Testing**: Vitest, React Testing Library
+- **Framework**: Next.js 14 (Vercel deployment ready)
+- **UI Library**: React 18
+- **Styling**: Tailwind CSS 3
+- **State Management**: Zustand 4.x
+- **HTTP Client**: Axios 1.x
+- **Forms**: React Hook Form 7.x
+- **Testing**: Vitest 0.34.x
 
-### DevOps & Tools
-- **Package Manager**: pnpm (monorepo)
-- **Version Control**: Git
+### DevOps
+- **Containerization**: Docker
+- **Orchestration**: Docker Compose (dev)
 - **CI/CD**: GitHub Actions
-- **Docker**: Containerization
-- **Database Migrations**: Prisma Migrate
+- **Deployment**: Vercel (Frontend), Railway/Render (Backend)
 
-## Database Schema - Core Entities
+---
 
-### Authentication & Users
-- `users` - System users with roles
-- `roles` - Role definitions (Admin, Treasurer, Committee, Member)
-- `permissions` - Permission matrix
-- `sessions` - Active user sessions
+## 3. Database Architecture
 
-### Groups (Stokvels, Savings Clubs, etc.)
-- `groups` - Group metadata
-- `group_settings` - Configuration
-- `group_members` - Membership tracking
-- `group_roles` - Role assignments per member
+### Design Principles
 
-### Governance
-- `constitutions` - Group rules & bylaws
-- `meetings` - Meeting records
-- `meeting_agendas` - Agenda items
-- `meeting_resolutions` - Voting outcomes
-- `voting_records` - Individual votes
+1. **Immutability**: Financial records cannot be modified after creation
+2. **Audit Trail**: Every action logged with user, timestamp, and reason
+3. **Soft Deletes**: Records marked as deleted, never removed
+4. **Referential Integrity**: Strong foreign key constraints
+5. **ACID Compliance**: Full transaction support
 
-### Financial Records (READ-ONLY RECORDS ONLY)
-- `contributions` - Member contributions
-- `contribution_ledger` - Complete history
-- `withdrawals` - Withdrawal records
-- `loans` - Loan applications & records
-- `loan_repayments` - Repayment history
-- `expenses` - Group expenses
+### Database Schema Overview
 
-### Audit & Compliance
-- `audit_log` - Immutable change log
-- `audit_events` - Transaction events
-- `deletion_log` - Soft deletion tracking
+See `packages/backend/prisma/schema.prisma` for complete schema.
 
-## API Architecture
+**Core Tables:**
+- Authentication: `User`, `Role`, `Permission`, `Session`
+- Groups: `Group`, `GroupSettings`, `GroupMember`, `GroupRole`
+- Governance: `Constitution`, `Meeting`, `Resolution`, `Vote`
+- Finance: `Contribution`, `Withdrawal`, `Loan`, `LoanRepayment`, `Expense`, `Fund`
+- Audit: `AuditLog`, `DeletionLog`
 
-### Authentication Endpoints
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `POST /api/auth/refresh` - Token refresh
+---
 
-### Group Management
-- `POST /api/groups` - Create group
-- `GET /api/groups/:id` - Get group details
-- `PATCH /api/groups/:id` - Update group settings
-- `GET /api/groups/:id/members` - List members
+## 4. API Architecture
 
-### Member Management
-- `POST /api/groups/:id/members` - Add member
-- `PATCH /api/groups/:id/members/:memberId` - Update member
-- `DELETE /api/groups/:id/members/:memberId` - Remove member (soft)
+### REST API Design
 
-### Contribution Ledger
-- `POST /api/groups/:id/contributions` - Record contribution
-- `GET /api/groups/:id/contributions` - Ledger history
-- `GET /api/groups/:id/members/:memberId/statement` - Member statement
+All endpoints follow RESTful conventions with consistent response formats.
 
-### Reports
-- `GET /api/groups/:id/reports/summary` - Monthly summary
-- `GET /api/groups/:id/reports/treasurer` - Treasurer report
-- `GET /api/groups/:id/reports/member/:memberId` - Member report
-- `GET /api/groups/:id/reports/audit` - Audit trail
+#### Base URL
+```
+https://api.ubuntu-finance.example.com/api/v1
+```
 
-## Security Principles
-
-1. **Authentication**: JWT with secure storage (httpOnly cookies)
-2. **Authorization**: Role-based access control (RBAC)
-3. **Data Validation**: Input validation on all endpoints
-4. **Immutability**: No deletion of financial records
-5. **Audit Logging**: Every action tracked with user, timestamp, delta
-6. **Encryption**: Sensitive data encrypted at rest
-7. **Rate Limiting**: Prevent abuse
-8. **CORS**: Restrict cross-origin requests
-
-## Audit Logging Strategy
-
-Every record change creates an entry in `audit_log`:
-
-```sql
+#### Response Format
+```json
 {
-  audit_id: UUID,
-  user_id: UUID,
-  action: 'CREATE' | 'UPDATE' | 'DELETE' (soft),
-  table_name: string,
-  record_id: UUID,
-  previous_values: JSON,
-  new_values: JSON,
-  change_reason: string,
-  timestamp: timestamp,
-  ip_address: string,
-  user_agent: string
+  "status": "success|error",
+  "data": {...},
+  "message": "Human-readable message"
 }
 ```
 
-This creates an immutable, queryable history of all changes.
+#### Authentication
+- JWT tokens in Authorization header: `Bearer <token>`
+- Tokens valid for 7 days
+- Refresh token mechanism included
 
-## Phase 1 Implementation (MVP)
+See `packages/backend/API.md` for detailed endpoint documentation.
 
-Priority order:
+---
 
+## 5. Security Architecture
+
+### Authentication & Authorization
+
+#### JWT Strategy
+- Issued on login with 7-day expiry
+- Stored in httpOnly cookies (frontend)
+- Payload includes userId, email, role
+
+#### RBAC (Role-Based Access Control)
+```
+Admin - Full system access
+Treasurer - Financial transaction recording
+Committee - Transaction approval
+Member - View personal data
+```
+
+### Data Protection
+
+- Passwords hashed with bcrypt (cost: 10)
+- Rate limiting: 100 requests per 15 minutes per IP
+- SQL injection prevention via Prisma ORM
+- CORS restrictions
+- HTTPS enforced in production
+
+---
+
+## 6. Frontend Architecture
+
+### Next.js 14 Features
+
+- **App Router**: Modern file-based routing
+- **Server Components**: Default for performance
+- **API Routes**: Backend endpoints in `/api`
+- **Static Generation**: ISR for performance
+- **Image Optimization**: Automatic with `next/image`
+
+### Deployment on Netlify/Vercel
+
+#### Environment Configuration
+```env
+REACT_APP_API_URL=https://api.ubuntu-finance.example.com
+```
+
+#### Build Settings
+```
+Build command: npm run build
+Publish directory: .next
+Node version: 18
+```
+
+### State Management
+
+Zustand stores for:
+- Authentication state
+- Group selection
+- User preferences
+- UI state
+
+---
+
+## 7. Deployment Configuration
+
+### Frontend Deployment (Netlify/Vercel)
+
+#### Netlify Configuration
+```toml
+[build]
+  command = "npm run build -w packages/frontend"
+  publish = "packages/frontend/.next"
+
+[functions]
+  directory = "packages/frontend/api"
+```
+
+#### Environment Variables
+- `REACT_APP_API_URL` - Backend API URL
+- `NEXT_PUBLIC_*` - Public variables
+
+#### Build Logs
+- GitHub Actions automatically deploys on push to main
+- Netlify/Vercel webhook integration
+- Automatic previews for pull requests
+
+### Backend Deployment
+
+#### Docker Image
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY packages/backend/package*.json ./
+RUN npm ci --only=production
+COPY packages/backend/dist ./dist
+EXPOSE 3001
+CMD ["node", "dist/index.js"]
+```
+
+#### Hosting Options
+- **Railway**: `npm start` (automatic Node.js detection)
+- **Render**: Web Service with `npm start`
+- **Heroku**: Procfile configured
+
+---
+
+## 8. Deployment Checklist
+
+### Pre-Deployment
+
+- [ ] All tests passing
+- [ ] Code review completed
+- [ ] Environment variables configured
+- [ ] Database migrations tested
+- [ ] Security audit completed
+
+### Frontend Deployment
+
+1. Push to GitHub `main` branch
+2. GitHub Actions triggers build
+3. Netlify/Vercel automatically deploys
+4. DNS points to deployment URL
+
+### Backend Deployment
+
+1. Build Docker image
+2. Push to container registry
+3. Deploy to Railway/Render
+4. Update database credentials
+5. Run migrations: `npm run migrate:deploy`
+
+### Post-Deployment
+
+- [ ] Health check passed
+- [ ] API connectivity verified
+- [ ] Frontend loads successfully
+- [ ] Authentication working
+- [ ] Audit logging active
+
+---
+
+## 9. Project File Structure
+
+```
+ubuntu-finance-society/
+├── .github/
+│   └── workflows/
+│       ├── ci-cd.yml              # CI/CD pipeline
+│       ├── code-quality.yml       # Code quality checks
+│       └── deploy.yml             # Deployment workflow
+│
+├── packages/
+│   ├── backend/
+│   │   ├── src/
+│   │   │   ├── index.ts           # Server entry point
+│   │   │   ├── routes/            # API endpoints
+│   │   │   ├── middleware/        # Express middleware
+│   │   │   └── utils/             # Utilities
+│   │   ├── prisma/
+│   │   │   ├── schema.prisma      # Database schema
+│   │   │   └── migrations/        # Database migrations
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── Dockerfile
+│   │   └── .env.example
+│   │
+│   └── frontend/
+│       ├── src/
+│       │   ├── app/               # Next.js App Router
+│       │   ├── components/        # React components
+│       │   ├── store/             # Zustand state
+│       │   ├── lib/               # Utilities
+│       │   └── styles/            # Tailwind CSS
+│       ├── public/                # Static assets
+│       ├── package.json
+│       ├── next.config.js
+│       ├── tsconfig.json
+│       ├── Dockerfile
+│       └── netlify.toml           # Netlify config
+│
+├── docker-compose.yml             # Local development
+├── .env.example                   # Environment template
+├── .editorconfig                  # Editor configuration
+├── .gitignore                     # Git ignore rules
+├── LICENSE                        # MIT License
+├── README.md                      # Project overview
+├── ARCHITECTURE.md                # This file
+├── DEVELOPMENT.md                 # Development guide
+├── CONTRIBUTING.md                # Contribution guidelines
+└── CONFIG.md                      # Configuration guide
+```
+
+---
+
+## 10. Quick Start Guide
+
+### Local Development
+
+```bash
+# Clone repository
+git clone https://github.com/wenkosimthika-create/ubuntu-finance-society.git
+cd ubuntu-finance-society
+
+# Install dependencies
+npm install
+
+# Setup environment
+cp .env.example .env
+
+# Start with Docker Compose
+docker-compose up
+
+# Access:
+# Frontend: http://localhost:3000
+# API: http://localhost:3001
+# Database: localhost:5432
+```
+
+### Netlify Deployment
+
+1. **Connect GitHub Repository**
+   - Go to app.netlify.com
+   - Click "New site from Git"
+   - Select GitHub repository
+   - Select branch: `main`
+
+2. **Configure Build Settings**
+   - Build command: `npm run build -w packages/frontend`
+   - Publish directory: `packages/frontend/.next`
+   - Node version: 18
+
+3. **Set Environment Variables**
+   - In Netlify dashboard → Site settings → Build & deploy → Environment
+   - Add: `REACT_APP_API_URL` with backend API URL
+
+4. **Deploy**
+   - Netlify automatically builds and deploys
+   - Custom domain configuration available
+
+### Backend Deployment (Railway)
+
+1. **Connect GitHub Repository**
+   - Go to railway.app
+   - Create new project
+   - Select GitHub repository
+
+2. **Configure**
+   - Add PostgreSQL database
+   - Set environment variables
+   - Configure root directory: `packages/backend`
+
+3. **Deploy**
+   - Railway automatically detects Node.js
+   - Builds and deploys automatically
+   - Provides public API URL
+
+---
+
+## 11. Monitoring & Maintenance
+
+### Health Checks
+
+```bash
+# Frontend health
+curl https://your-frontend.netlify.app/api/health
+
+# Backend health
+curl https://your-api.railway.app/health
+```
+
+### Log Monitoring
+
+- **Frontend**: Netlify deployment logs
+- **Backend**: Railway logs
+- **Database**: PostgreSQL logs
+- **Audit Trail**: Query `AuditLog` table
+
+### Regular Maintenance
+
+- Weekly: Review audit logs
+- Monthly: Check security updates
+- Quarterly: Database optimization
+- Annually: Backup verification
+
+---
+
+## 12. Support & Resources
+
+### Documentation
+- **API Documentation**: `packages/backend/API.md`
+- **Development Guide**: `DEVELOPMENT.md`
+- **Architecture Guide**: `ARCHITECTURE.md`
+- **Configuration Guide**: `CONFIG.md`
+
+### GitHub Repository
+- URL: https://github.com/wenkosimthika-create/ubuntu-finance-society
+- Issues: Bug reports and feature requests
+- Discussions: Questions and ideas
+
+### Deployment Providers
+- **Frontend**: Netlify (app.netlify.com)
+- **Backend**: Railway (railway.app)
+- **Database**: PostgreSQL (managed service)
+
+---
+
+## 13. Project Status
+
+### Completed ✅
+- [x] Project setup and configuration
+- [x] Backend structure (Express.js + TypeScript)
+- [x] Frontend structure (Next.js + React)
+- [x] Database schema (Prisma + PostgreSQL)
+- [x] Docker configuration
+- [x] GitHub Actions CI/CD
+- [x] API documentation
+- [x] Development guide
+- [x] Architecture documentation
+- [x] Contributing guidelines
+
+### Ready for Phase 1 Development
 1. Authentication & User Management
 2. Group Creation & Configuration
 3. Member Management
-4. Contribution Ledger (immutable)
+4. Contribution Ledger
 5. Audit Logging
 6. Basic Reporting
-7. Member Dashboard
 
-## Phase 2 Implementation
+---
 
-8. Lending Module
-9. Burial Society Module
-10. Governance Workflows
-11. Meeting Management
+## Final Summary
 
-## Phase 3 Implementation
+**Ubuntu Finance Society** is now ready for deployment and phase 1 development. The project includes:
 
-12. Analytics Dashboard
-13. Multi-group Administration
-14. Mobile Applications
-15. Read-only Banking Reconciliation
+✅ **Complete Backend**
+- Node.js/Express API server
+- PostgreSQL database with Prisma ORM
+- JWT authentication with RBAC
+- Comprehensive audit logging
+- API documentation
 
-## Compliance & Messaging
+✅ **Complete Frontend**
+- Next.js React application
+- Tailwind CSS styling
+- Zustand state management
+- Netlify deployment ready
+- Mobile-first responsive design
 
-Every screen must clearly display:
+✅ **DevOps & Deployment**
+- Docker containerization
+- GitHub Actions CI/CD
+- Netlify frontend deployment
+- Railway backend deployment
+- Environment configuration
 
-> "Ubuntu Finance Society does not hold, manage, invest, lend or transfer funds. Ubuntu Finance Society is a record-keeping and governance platform."
+✅ **Documentation**
+- Architecture guide
+- API documentation
+- Development guide
+- Configuration guide
+- Contributing guidelines
 
-This message appears:
-- On login screen
-- On main dashboard
-- On all financial record screens
-- In help/about section
-- On printed reports
+### Next Steps for Production
 
-## Design System
+1. **Frontend (Netlify)**
+   - Go to app.netlify.com
+   - Connect GitHub repository
+   - Configure build settings
+   - Set environment variables
+   - Deploy
 
-### Color Palette
-- **Primary**: Deep Forest Green (#1B5E20)
-- **Secondary**: Warm Sand (#D4A373)
-- **Accent**: Copper (#B87333)
-- **Background**: White (#FFFFFF)
-- **Text**: Dark Gray (#2C2C2C)
+2. **Backend (Railway)**
+   - Go to railway.app
+   - Connect GitHub repository
+   - Add PostgreSQL database
+   - Set environment variables
+   - Deploy
 
-### Typography
-- **Headings**: Sans-serif, bold
-- **Body**: Sans-serif, regular
-- **Monospace**: For transaction IDs, codes
+3. **Database**
+   - Configure PostgreSQL connection
+   - Run migrations
+   - Seed initial data
 
-### Mobile-First Approach
-- Base design for 320px mobile
-- Scale up to tablet (768px)
-- Scale up to desktop (1024px+)
-- Touch-friendly targets (min 44x44px)
+4. **Configuration**
+   - Update API URLs
+   - Configure authentication
+   - Set up monitoring
+   - Configure backups
 
-## Deployment Architecture
+---
 
-```
-Git (GitHub)
-    ↓
-GitHub Actions (CI/CD)
-    ↓ (on merge to main)
-Docker Build
-    ↓
-Docker Registry
-    ↓
-Kubernetes / Docker Compose
-    ↓
-PostgreSQL (managed database)
-```
-
-## Development Workflow
-
-1. Create feature branch from `develop`
-2. Implement with tests
-3. Submit PR with clear description
-4. Code review (2+ approvals)
-5. Merge to `develop`
-6. Stage testing
-7. Merge to `main` for production
-
-## Monitoring & Logging
-
-- **Application Logs**: Winston (JSON format)
-- **Error Tracking**: Sentry (optional)
-- **Performance**: Application Performance Monitoring
-- **Audit Access**: Query audit_log for compliance reports
+**The group keeps the money. Ubuntu Finance Society keeps the record.** 🚀
