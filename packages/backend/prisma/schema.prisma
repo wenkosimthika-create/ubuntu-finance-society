@@ -1,0 +1,456 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTH & USERS
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          Role      @relation(fields: [roleId], references: [id])
+  roleId        String
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  groupRoles    GroupRole[]
+  auditLogs     AuditLog[]
+  contributions Contribution[]
+  loans         Loan[]
+  loanRepayments LoanRepayment[]
+  meetings      Meeting[]
+  votes         Vote[]
+
+  @@index([roleId])
+  @@index([email])
+}
+
+model Role {
+  id          String      @id @default(cuid())
+  name        String      @unique // 'Admin', 'Treasurer', 'Committee', 'Member'
+  description String?
+  users       User[]
+  permissions Permission[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Permission {
+  id          String      @id @default(cuid())
+  name        String      @unique // 'create:group', 'read:ledger', etc.
+  description String?
+  roles       Role[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================================================
+// GROUPS (Stokvels, Savings Clubs, etc.)
+// ============================================================================
+
+model Group {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  type            GroupType // 'STOKVEL', 'SAVINGS_CLUB', 'LENDING_POOL', etc.
+  status          GroupStatus @default(ACTIVE)
+  foundedDate     DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  settings        GroupSettings?
+  members         GroupMember[]
+  roles           GroupRole[]
+  constitution    Constitution?
+  meetings        Meeting[]
+  contributions   Contribution[]
+  withdrawals     Withdrawal[]
+  loans           Loan[]
+  expenses        Expense[]
+  funds           Fund[]
+  auditLogs       AuditLog[]
+
+  @@index([type])
+  @@index([status])
+}
+
+enum GroupType {
+  STOKVEL
+  SAVINGS_CLUB
+  LENDING_POOL
+  EMERGENCY_FUND
+  INVESTMENT_CLUB
+  COOPERATIVE
+  BURIAL_SOCIETY
+  OTHER
+}
+
+enum GroupStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DISSOLVED
+}
+
+model GroupSettings {
+  id                    String  @id @default(cuid())
+  groupId               String  @unique
+  group                 Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  meetingFrequency      String? // 'MONTHLY', 'QUARTERLY', etc.
+  contributionAmount    Float?  // Optional standard contribution
+  contributionCurrency  String  @default("ZAR")
+  maxMembers            Int?
+  requiresApproval      Boolean @default(true)
+  minVotingMembers      Int     @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([groupId])
+}
+
+model GroupMember {
+  id            String    @id @default(cuid())
+  groupId       String
+  group         Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId        String
+  // Note: We don't use a direct User relation here for flexibility
+  // Members can be recorded before they create user accounts
+  memberName    String
+  memberEmail   String?
+  memberPhone   String?
+  status        MemberStatus @default(ACTIVE)
+  joinDate      DateTime
+  exitDate      DateTime?
+  role          GroupRole? // Their role in this group
+  roleId        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([groupId, memberEmail])
+  @@index([groupId])
+  @@index([status])
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  WITHDRAWN
+}
+
+model GroupRole {
+  id          String    @id @default(cuid())
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String    // 'Chair', 'Secretary', 'Treasurer', 'Member', etc.
+  members     GroupMember[]
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([groupId, userId, role])
+  @@index([groupId])
+  @@index([userId])
+}
+
+// ============================================================================
+// GOVERNANCE
+// ============================================================================
+
+model Constitution {
+  id        String   @id @default(cuid())
+  groupId   String   @unique
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  content   String   // Full text of constitution/bylaws
+  version   Int      @default(1)
+  approvedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId])
+}
+
+model Meeting {
+  id            String    @id @default(cuid())
+  groupId       String
+  group         Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  scheduledDate DateTime
+  actualDate    DateTime?
+  type          String    // 'GENERAL', 'SPECIAL', 'ANNUAL', etc.
+  status        MeetingStatus @default(SCHEDULED)
+  agenda        String?   // Meeting agenda in markdown or text
+  notes         String?   // Meeting notes/minutes
+  attendees     Meeting_Attendee[]
+  resolutions   Resolution[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([groupId])
+  @@index([scheduledDate])
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  HELD
+  CANCELLED
+  POSTPONED
+}
+
+model Meeting_Attendee {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   // 'PRESENT', 'ABSENT', 'EXCUSED'
+  createdAt DateTime @default(now())
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+}
+
+model Resolution {
+  id          String   @id @default(cuid())
+  meetingId   String
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  description String   // What was voted on
+  outcome     String   // 'PASSED', 'FAILED', 'DEFERRED'
+  votes       Vote[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([meetingId])
+}
+
+model Vote {
+  id           String   @id @default(cuid())
+  resolutionId String
+  resolution   Resolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decision     String   // 'YES', 'NO', 'ABSTAIN'
+  createdAt    DateTime @default(now())
+
+  @@unique([resolutionId, userId])
+  @@index([resolutionId])
+}
+
+// ============================================================================
+// FINANCIAL RECORDS (IMMUTABLE)
+// ============================================================================
+
+model Contribution {
+  id              String    @id @default(cuid())
+  groupId         String
+  group           Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId        String    // Email or identifier
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
+  amount          Float
+  currency        String    @default("ZAR")
+  description     String?
+  date            DateTime  @default(now())
+  status          ContributionStatus @default(RECORDED)
+  verifiedAt      DateTime?
+  verifiedBy      String?   // User ID who verified
+  createdAt       DateTime  @default(now())
+  // No updatedAt - immutable record. Changes create new entries with reason.
+
+  @@index([groupId])
+  @@index([memberId])
+  @@index([date])
+  @@index([status])
+}
+
+enum ContributionStatus {
+  RECORDED
+  VERIFIED
+  DISPUTED
+  CANCELLED
+}
+
+model Withdrawal {
+  id              String    @id @default(cuid())
+  groupId         String
+  group           Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId        String
+  amount          Float
+  currency        String    @default("ZAR")
+  reason          String
+  date            DateTime  @default(now())
+  status          WithdrawalStatus @default(REQUESTED)
+  approvedAt      DateTime?
+  approvedBy      String?   // User ID who approved
+  createdAt       DateTime  @default(now())
+
+  @@index([groupId])
+  @@index([memberId])
+  @@index([status])
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  APPROVED
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  currency    String    @default("ZAR")
+  date        DateTime  @default(now())
+  category    String    // 'ADMIN', 'EVENT', 'OTHER'
+  approvedBy  String?   // User ID
+  createdAt   DateTime  @default(now())
+
+  @@index([groupId])
+  @@index([date])
+}
+
+model Fund {
+  id          String    @id @default(cuid())
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name        String    // 'Emergency Fund', 'Burial Fund', etc.
+  description String?
+  targetAmount Float?
+  currentAmount Float    @default(0)
+  currency    String    @default("ZAR")
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([groupId, name])
+  @@index([groupId])
+}
+
+// ============================================================================
+// LENDING MODULE
+// ============================================================================
+
+model Loan {
+  id              String    @id @default(cuid())
+  groupId         String
+  group           Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  borrowerId      String    // Member ID
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
+  principalAmount Float
+  currency        String    @default("ZAR")
+  interestRate    Float?    // Annual interest rate
+  termMonths      Int       // Loan term in months
+  loanDate        DateTime
+  dueDate         DateTime
+  status          LoanStatus @default(ACTIVE)
+  approvedAt      DateTime?
+  approvedBy      String?   // User ID
+  purpose         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  repayments      LoanRepayment[]
+
+  @@index([groupId])
+  @@index([borrowerId])
+  @@index([status])
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+  CANCELLED
+}
+
+model LoanRepayment {
+  id        String   @id @default(cuid())
+  loanId    String
+  loan      Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Float
+  currency  String   @default("ZAR")
+  date      DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([loanId])
+  @@index([date])
+}
+
+// ============================================================================
+// AUDIT & COMPLIANCE
+// ============================================================================
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  groupId         String
+  group           Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  action          String    // 'CREATE', 'UPDATE', 'DELETE' (soft)
+  tableName       String    // Which table was modified
+  recordId        String    // Which record
+  previousValues  Json?     // Snapshot of previous values
+  newValues       Json?     // Snapshot of new values
+  changeReason    String?   // Why was this changed
+  ipAddress       String?
+  userAgent       String?
+  timestamp       DateTime  @default(now())
+  // Immutable - no updatedAt
+
+  @@index([userId])
+  @@index([groupId])
+  @@index([timestamp])
+  @@index([tableName, recordId])
+}
+
+model DeletionLog {
+  id              String    @id @default(cuid())
+  tableName       String
+  recordId        String
+  reason          String?
+  deletedAt       DateTime  @default(now())
+  deletedBy       String    // User ID
+  data            Json      // Full record data before deletion
+
+  @@index([tableName, recordId])
+  @@index([deletedAt])
+}
