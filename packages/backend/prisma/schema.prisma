@@ -95,6 +95,7 @@ model Group {
   loans           Loan[]
   expenses        Expense[]
   funds           Fund[]
+  ledgerEntries   LedgerEntry[]
   auditLogs       AuditLog[]
 
   @@index([type])
@@ -124,7 +125,7 @@ model GroupSettings {
   groupId               String  @unique
   group                 Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
   meetingFrequency      String? // 'MONTHLY', 'QUARTERLY', etc.
-  contributionAmount    Float?  // Optional standard contribution
+  contributionCents     Int?    // Optional standard contribution, in ZAR cents (see ADR-002)
   contributionCurrency  String  @default("ZAR")
   maxMembers            Int?
   requiresApproval      Boolean @default(true)
@@ -267,7 +268,55 @@ model Vote {
 
 // ============================================================================
 // FINANCIAL RECORDS (IMMUTABLE)
+//
+// The platform is a record-keeping tool only. It never holds, moves, or
+// instructs the movement of member funds (see docs/DECISIONS.md ADR-004).
+// All monetary values are integer ZAR cents (ADR-002). Balances are never
+// stored; they are derived by summing LedgerEntry rows (ADR-003).
 // ============================================================================
+
+// Append-only. Rows are never updated or deleted. A mistake is corrected by
+// inserting a reversing entry whose `reversesId` points at the original.
+model LedgerEntry {
+  id            String          @id @default(cuid())
+  groupId       String
+  group         Group           @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  fundId        String?
+  fund          Fund?           @relation(fields: [fundId], references: [id], onDelete: Restrict)
+  memberId      String?         // GroupMember.id when the entry concerns one member
+  type          LedgerEntryType
+  direction     LedgerDirection // CREDIT increases the group's recorded pool, DEBIT decreases it
+  amountCents   Int             // Always positive; sign comes from `direction`
+  currency      String          @default("ZAR")
+  sourceTable   String          // 'Contribution', 'Expense', 'Loan', 'LoanRepayment', 'Withdrawal'
+  sourceId      String
+  reversesId    String?         @unique
+  reverses      LedgerEntry?    @relation("Reversal", fields: [reversesId], references: [id], onDelete: Restrict)
+  reversedBy    LedgerEntry?    @relation("Reversal")
+  description   String?
+  effectiveDate DateTime        @default(now())
+  recordedBy    String          // User.id
+  createdAt     DateTime        @default(now())
+
+  @@unique([sourceTable, sourceId])
+  @@index([groupId, effectiveDate])
+  @@index([fundId])
+  @@index([memberId])
+}
+
+enum LedgerEntryType {
+  CONTRIBUTION
+  EXPENSE
+  LOAN_DISBURSEMENT
+  LOAN_REPAYMENT
+  PAYOUT
+  REVERSAL
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
 
 model Contribution {
   id              String    @id @default(cuid())
@@ -276,7 +325,7 @@ model Contribution {
   memberId        String    // Email or identifier
   userId          String?
   user            User?     @relation(fields: [userId], references: [id])
-  amount          Float
+  amountCents     Int
   currency        String    @default("ZAR")
   description     String?
   date            DateTime  @default(now())
@@ -299,12 +348,15 @@ enum ContributionStatus {
   CANCELLED
 }
 
+// Records a payout the group decided on and settled outside the platform.
+// `RECORDED_AS_PAID` means the group reported the payment; the platform did
+// not make it.
 model Withdrawal {
   id              String    @id @default(cuid())
   groupId         String
   group           Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   memberId        String
-  amount          Float
+  amountCents     Int
   currency        String    @default("ZAR")
   reason          String
   date            DateTime  @default(now())
@@ -321,7 +373,7 @@ model Withdrawal {
 enum WithdrawalStatus {
   REQUESTED
   APPROVED
-  PAID
+  RECORDED_AS_PAID
   REJECTED
   CANCELLED
 }
@@ -331,7 +383,7 @@ model Expense {
   groupId     String
   group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   description String
-  amount      Float
+  amountCents Int
   currency    String    @default("ZAR")
   date        DateTime  @default(now())
   category    String    // 'ADMIN', 'EVENT', 'OTHER'
@@ -342,16 +394,18 @@ model Expense {
   @@index([date])
 }
 
+// A fund has no stored balance. Balance = SUM(LedgerEntry.amountCents signed
+// by direction) WHERE fundId = this.id (ADR-003).
 model Fund {
   id          String    @id @default(cuid())
   groupId     String
   group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   name        String    // 'Emergency Fund', 'Burial Fund', etc.
   description String?
-  targetAmount Float?
-  currentAmount Float    @default(0)
+  targetCents Int?
   currency    String    @default("ZAR")
   status      String    @default("ACTIVE")
+  ledgerEntries LedgerEntry[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -370,9 +424,9 @@ model Loan {
   borrowerId      String    // Member ID
   userId          String?
   user            User?     @relation(fields: [userId], references: [id])
-  principalAmount Float
+  principalCents  Int
   currency        String    @default("ZAR")
-  interestRate    Float?    // Annual interest rate
+  interestRateBps Int?      // Annual rate in basis points: 1250 = 12.50% (ADR-002)
   termMonths      Int       // Loan term in months
   loanDate        DateTime
   dueDate         DateTime
@@ -405,7 +459,7 @@ model LoanRepayment {
   loan      Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  amount    Float
+  amountCents Int
   currency  String   @default("ZAR")
   date      DateTime @default(now())
   notes     String?
